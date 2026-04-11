@@ -127,6 +127,19 @@ class TimeboxProtocol:
         return cls.build(0x74, [max(0, min(100, level))])
 
     @classmethod
+    def set_time_format(cls, format_24h: bool = True) -> bytes:
+        """Set 12h/24h display format. Separate from clock view command."""
+        return cls.build(0x2D, [0x01 if format_24h else 0x00])
+
+    @classmethod
+    def set_time(cls, year: int, month: int, day: int, hour: int, minute: int, second: int) -> bytes:
+        """Sync device clock. Timebox EVO command 0x18."""
+        return cls.build(0x18, [
+            year & 0xFF, (year >> 8) & 0xFF,
+            month, day, hour, minute, second,
+        ])
+
+    @classmethod
     def disable_animations(cls) -> bytes:
         """Disable hot/trending auto-play and screensaver."""
         return cls.build(0x26, [0x00]) + cls.build(0x40, [0x00] * 10)

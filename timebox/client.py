@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 
 from .connection import TimeboxConnection
 from .protocol import TimeboxProtocol as P
@@ -80,6 +81,16 @@ class Timebox:
         self.send(P.brightness(level))
 
     # --- Misc ---
+
+    def sync_time(self) -> None:
+        """Sync device clock to host system time and set 24h format."""
+        now = datetime.now()
+        self.send(P.set_time(now.year, now.month, now.day, now.hour, now.minute, now.second))
+        self.send(P.set_time_format(True))
+
+    def set_time_format(self, format_24h: bool = True) -> None:
+        """Set 12h/24h display format."""
+        self.send(P.set_time_format(format_24h))
 
     def disable_animations(self) -> None:
         """Disable hot/trending auto-play and screensaver."""
