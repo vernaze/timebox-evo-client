@@ -88,10 +88,56 @@ class TimeboxConnection:
                 break
 
     def send(self, data: bytes) -> None:
-        if self.channel is None:
-            raise ConnectionError("Not connected")
+        if self.channel is None or not self._delegate.connected:
+            log.warning("RFCOMM channel dead, reconnecting...")
+            self._do_reconnect()
         buf = bytearray(data)
-        self.channel.writeSync_length_(bytes(buf), len(buf))
+        result = self.channel.writeSync_length_(bytes(buf), len(buf))
+        if result != 0:
+            log.warning(f"writeSync failed ({result}), reconnecting...")
+            self._do_reconnect()
+            result = self.channel.writeSync_length_(bytes(buf), len(buf))
+            if result != 0:
+                raise ConnectionError(f"writeSync failed after reconnect: {result}")
+
+    def _do_reconnect(self) -> None:
+        """Full teardown: close channel, close BT connection, reopen everything."""
+        log.info("Full reconnect: tearing down stale connection...")
+        try:
+            if self.channel is not None:
+                self.channel.closeChannel()
+                self.channel = None
+            self._tick(0.5)
+        except Exception:
+            pass
+        # Force BT device-level disconnect + reconnect
+        try:
+            if self.device is not None and self.device.isConnected():
+                self.device.closeConnection()
+                for _ in range(5):
+                    self._tick(1.0)
+                    if not self.device.isConnected():
+                        break
+            self._tick(2.0)
+        except Exception:
+            pass
+        # Fresh device handle + delegate
+        self.device = IOBluetoothDevice.deviceWithAddressString_(self.address)
+        self._delegate = _Delegate.alloc().init()
+        # Reconnect BT + RFCOMM
+        self._reconnect()
+        log.info("Retrying RFCOMM after full reconnect...")
+        result, channel = self.device.openRFCOMMChannelSync_withChannelID_delegate_(
+            None, self.channel_id, self._delegate
+        )
+        log.info(f"Reconnect RFCOMM result={result}, channel={channel}")
+        if result != 0 or channel is None:
+            raise ConnectionError(f"RFCOMM reconnect failed: result={result}")
+        self.channel = channel
+        for _ in range(10):
+            self._tick(1.0)
+            if self._delegate.connected:
+                break
 
     def disconnect(self) -> None:
         if self.channel is not None:
